@@ -1,3 +1,33 @@
-struct Nes {
-    var text = "Hello, World!"
+enum NesId {
+    case stringId(_ id: String)
+    case numberId(_ id: Float)
+}
+
+extension NesId: Codable {
+    enum CodingKeys: CodingKey {
+        case stringId
+        case numberId
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let id = try? container.decode(String.self) {
+            self = .stringId(id)
+        } else if let id = try? container.decode(Float.self) {
+            self = .numberId(id)
+        } else {
+            let context = DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Expected a string or number.")
+            throw DecodingError.dataCorrupted(context)
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .stringId(let id):
+            try container.encode(id)
+        case .numberId(let id):
+            try container.encode(id)
+        }
+    }
 }
