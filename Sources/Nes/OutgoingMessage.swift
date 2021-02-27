@@ -1,4 +1,4 @@
-enum ClientRequestType: String, Encodable {
+enum OutgoingMessageType: String, Encodable {
     case ping
     case hello
     case reauth
@@ -8,20 +8,20 @@ enum ClientRequestType: String, Encodable {
     case message
 }
 
-protocol ClientRequest: Encodable {
-    var type: ClientRequestType { get }
+protocol OutgoingMessage: Encodable {
+    var type: OutgoingMessageType { get }
     var id: NesId { get }
 }
 
 // Heartbeat: server -> client -> server
-struct Ping: ClientRequest {
-    let type = ClientRequestType.ping
+struct ClientPing: OutgoingMessage {
+    let type = OutgoingMessageType.ping
     let id: NesId
 }
 
 // client -> server -> client
-struct Hello<Auth: Encodable>: ClientRequest {
-    let type = ClientRequestType.hello
+struct ClientHello<Auth: Encodable>: OutgoingMessage {
+    let type = OutgoingMessageType.hello
     let id: NesId
     let version = "2"
     let auth: Auth
@@ -29,14 +29,14 @@ struct Hello<Auth: Encodable>: ClientRequest {
 }
 
 // client -> server -> client
-struct Reauth<Auth: Encodable>: ClientRequest {
-    let type = ClientRequestType.reauth
+struct ClientReauth<Auth: Encodable>: OutgoingMessage {
+    let type = OutgoingMessageType.reauth
     let id: NesId
     let auth: Auth
 }
 
 // client -> server -> client
-struct Request<Payload: Encodable>: Encodable {
+struct ClientRequest<Payload: Encodable>: Encodable {
     let type = "request"
     let id: NesId
     let method: HTTPMethod
@@ -53,18 +53,7 @@ struct Request<Payload: Encodable>: Encodable {
     }
 }
 
-// https://bugs.swift.org/browse/SR-8458
-extension Never: Codable {
-    public init(from decoder: Decoder) throws {
-        fatalError("Cannot construct Never")
-    }
-    
-    public func encode(to encoder: Encoder) throws {
-        fatalError("Should not have constructed Never")
-    }
-}
-
-extension Request where Payload == Never {
+extension ClientRequest where Payload == Never {
     init(method: HTTPMethod, path: String, headers: [String:String]? = nil) {
         self.id = .numberId(1234)
         self.method = method
@@ -75,22 +64,22 @@ extension Request where Payload == Never {
 }
 
 // client -> server [-> client]
-struct Sub: ClientRequest {
-    let type = ClientRequestType.sub
+struct ClientSub: OutgoingMessage {
+    let type = OutgoingMessageType.sub
     let id: NesId
     let path: String
 }
 
 // client -> server -> client
-struct Unsub: ClientRequest {
-    let type = ClientRequestType.unsub
+struct ClientUnsub: OutgoingMessage {
+    let type = OutgoingMessageType.unsub
     let id: NesId
     let path: String
 }
 
 // client -> server [-> client]
-struct Message<Value: Encodable>: ClientRequest {
-    let type = ClientRequestType.message
+struct ClientMessage<Value: Encodable>: OutgoingMessage {
+    let type = OutgoingMessageType.message
     let id: NesId
     let message: Value
 }

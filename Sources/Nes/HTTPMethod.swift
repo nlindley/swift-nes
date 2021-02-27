@@ -1,6 +1,5 @@
 // Taken from
 // https://raw.githubusercontent.com/apple/swift-nio/8ea768b0b8e52fd11006b88c68f974848094d7e9/Sources/NIOHTTP1/HTTPTypes.swift
-// TODO: Add NOTICE.txt
 
 public enum HTTPMethod: Equatable {
     internal enum HasBody {

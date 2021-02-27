@@ -1,6 +1,6 @@
 enum NesId {
     case stringId(_ id: String)
-    case numberId(_ id: Float)
+    case numberId(_ id: Double)
 }
 
 extension NesId: Codable {
@@ -13,7 +13,7 @@ extension NesId: Codable {
         let container = try decoder.singleValueContainer()
         if let id = try? container.decode(String.self) {
             self = .stringId(id)
-        } else if let id = try? container.decode(Float.self) {
+        } else if let id = try? container.decode(Double.self) {
             self = .numberId(id)
         } else {
             let context = DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Expected a string or number.")
