@@ -3,5 +3,6 @@ import XCTest
 import NesTests
 
 var tests = [XCTestCaseEntry]()
-tests += NesTests.allTests()
+tests += NesTests.__allTests()
+
 XCTMain(tests)
