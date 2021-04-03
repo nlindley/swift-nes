@@ -1,4 +1,4 @@
-enum NesId {
+enum NesId: Equatable {
     case stringId(_ id: String)
     case numberId(_ id: Double)
 }
