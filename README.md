@@ -1,6 +1,6 @@
 # Nes
 
-A Swift implementation of the [NES Protocol](https://github.com/hapijs/nes/blob/master/PROTOCOL.md).
+A Swift client implementation of the [NES Protocol](https://github.com/hapijs/nes/blob/master/PROTOCOL.md).
 
 ## License
 
