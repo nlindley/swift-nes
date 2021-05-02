@@ -1,3 +1,5 @@
+import Foundation
+
 enum IncomingMessageType: String, Decodable {
     case ping
     case hello
@@ -11,23 +13,18 @@ enum IncomingMessageType: String, Decodable {
     case revoke
 }
 
-enum IncomingMessage<
-    Msg: Decodable & Equatable,
-    Pub: Decodable & Equatable,
-    Update: Decodable & Equatable,
-    Revoke: Decodable & Equatable,
-    Request: Decodable & Equatable
->: Decodable, Equatable {
+/* Doesn’t handle payloads since those aren’t known until a subscription occurs */
+enum IncomingMessage: Decodable, Equatable {
     case ping
     case hello(ServerHello)
     case reauth(ServerReauth)
-    case request(ServerRequest<Request>)
+    case request(ServerRequest)
     case sub(ServerSub)
     case unsub(ServerUnsub)
-    case message(ServerMessage<Msg>)
-    case update(ServerUpdate<Update>)
-    case pub(ServerPub<Pub>)
-    case revoke(ServerRevoke<Revoke>)
+    case message(ServerMessage)
+    case update(ServerUpdate)
+    case pub(ServerPub)
+    case revoke(ServerRevoke)
     
     enum CodingKeys: String, CodingKey {
         case type
@@ -46,7 +43,6 @@ enum IncomingMessage<
         case "reauth":
             let reauth = try ServerReauth(from: decoder)
             self = .reauth(reauth)
-//        case "request":
         case "sub":
             let sub = try ServerSub(from: decoder)
             self = .sub(sub)
@@ -54,19 +50,19 @@ enum IncomingMessage<
             let unsub = try ServerUnsub(from: decoder)
             self = .unsub(unsub)
         case "message":
-            let message = try ServerMessage<Msg>(from: decoder)
+            let message = try ServerMessage(from: decoder)
             self = .message(message)
         case "update":
-            let update = try ServerUpdate<Update>(from: decoder)
+            let update = try ServerUpdate(from: decoder)
             self = .update(update)
         case "pub":
-            let pub = try ServerPub<Pub>(from: decoder)
+            let pub = try ServerPub(from: decoder)
             self = .pub(pub)
         case "revoke":
-            let revoke = try ServerRevoke<Revoke>(from: decoder)
+            let revoke = try ServerRevoke(from: decoder)
             self = .revoke(revoke)
         case "request":
-            let request = try ServerRequest<Request>(from: decoder)
+            let request = try ServerRequest(from: decoder)
             self = .request(request)
         default:
             let context = DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Expected known type for incoming message");
@@ -81,7 +77,7 @@ struct HeartbeatConfig: Decodable, Equatable {
 }
 
 struct ServerHello: Equatable {
-    let id: NesId
+    let id: NesID
     let heartbeat: HeartbeatConfig?
 }
 
@@ -94,7 +90,7 @@ extension ServerHello: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
-        self.id = try container.decode(NesId.self, forKey: .id)
+        self.id = try container.decode(NesID.self, forKey: .id)
         
         if let heartbeat = try? container.decode(HeartbeatConfig.self, forKey: .heartbeat) {
             self.heartbeat = heartbeat
@@ -110,41 +106,34 @@ extension ServerHello: Decodable {
 }
 
 struct ServerReauth: Decodable, Equatable {
-    let id: NesId
+    let id: NesID
 }
 
-struct ServerRequest<Payload: Decodable & Equatable>: Decodable, Equatable {
-    let id: NesId
+struct ServerRequest: Decodable, Equatable {
+    let id: NesID
     let statusCode: Int
-    // TODO: Can this be nil on, e.g., a 204?
-    let payload: Payload
     let headers: [String:String]?
 }
 
-struct ServerMessage<Value: Decodable & Equatable>: Decodable, Equatable {
-    let id: NesId
-    let message: Value
+struct ServerMessage: Decodable, Equatable {
+    let id: NesID
 }
 
 struct ServerSub: Decodable, Equatable{
-    let id: NesId
+    let id: NesID
     let path: String
 }
 
 struct ServerUnsub: Decodable, Equatable {
-    let id: NesId
+    let id: NesID
 }
 
-struct ServerPub<Value: Decodable & Equatable>: Decodable, Equatable {
+struct ServerPub: Decodable, Equatable {
     let path: String
-    let message: Value
 }
 
-struct ServerUpdate<Value: Decodable & Equatable>: Decodable, Equatable {
-    let message: Value
-}
+struct ServerUpdate: Decodable, Equatable {}
 
-struct ServerRevoke<Value: Decodable & Equatable>: Decodable, Equatable {
+struct ServerRevoke: Decodable, Equatable {
     let path: String
-    let message: Value
 }

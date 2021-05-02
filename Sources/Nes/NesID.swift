@@ -1,12 +1,20 @@
-enum NesId: Equatable {
+enum NesID: Equatable {
     case stringId(_ id: String)
     case numberId(_ id: Double)
 }
 
-extension NesId: Codable {
+extension NesID: Codable {
     enum CodingKeys: CodingKey {
         case stringId
         case numberId
+    }
+    
+    init(string: String) {
+        self = .stringId(string)
+    }
+    
+    init(number: Double) {
+        self = .numberId(number)
     }
 
     init(from decoder: Decoder) throws {
