@@ -40,9 +40,7 @@ final class NesTests: XCTestCase {
             .store(in: &cancellables)
         
         client.connect()
-        
-        print("isConnected? \(client.isConnected)")
-        
+
         wait(for: [expectation], timeout: 2.0)
         
         XCTAssertNil(error)

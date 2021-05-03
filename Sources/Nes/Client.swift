@@ -60,6 +60,8 @@ public class Client: WebSocketDelegate {
                 print("Received hello: \(hello.id)")
             case .ping:
                 print("Received ping")
+                let pong = try! JSONEncoder().encode(ClientPing(id: NesID(string: UUID().uuidString)))
+                socket.write(data: pong)
             case .sub(let sub):
                 print("Received sub: \(sub.id) \(sub.path)")
             case .reauth(let reauth):
@@ -109,13 +111,15 @@ public class Client: WebSocketDelegate {
             break
         case .pong:
             break
-        case .viabilityChanged:
-            // TODO: Reconnect? If true?
+        case .viabilityChanged(let viable):
+            print("Viability changed: \(viable)")
             break
-        case .reconnectSuggested:
+        case .reconnectSuggested(let suggested):
             // TODO: Reconnect? If true?
+            print("Reconnect suggested: \(suggested)")
             break
         case .cancelled:
+            print("Cancelled")
             isConnected = false
         case .error(let error):
             isConnected = false
