@@ -5,7 +5,6 @@ import Starscream
 // TODO: Remove extra print statements
 // TODO: Handle
 
-@available(macOS 10.15, *)
 public class Client: WebSocketDelegate {
     private var request: URLRequest
     private var socket: WebSocket
