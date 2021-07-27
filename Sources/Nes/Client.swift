@@ -11,6 +11,7 @@ public class Client: WebSocketDelegate {
     public private(set) var isConnected: Bool = false
     private var subscriptions: Set<String> = []
     private let subject = PassthroughSubject<PubMessage, Error>()
+    private var token: String = ""
     
     typealias MessageCallback<Message> = (_ message: Message) -> ()
     
@@ -45,7 +46,7 @@ public class Client: WebSocketDelegate {
             print("Connected")
             let subs = subscriptions
             print("Subs: \(subs)")
-            let hello = try! JSONEncoder().encode(ClientHello<[String:String]>(id: NesID(string: UUID().uuidString), auth: [:], subs: Array(subscriptions)))
+            let hello = try! JSONEncoder().encode(ClientHello<[String:[String:String]]>(id: NesID(string: UUID().uuidString), auth: ["headers":["authorization": "Bearer \(token)"]], subs: Array(subscriptions)))
             socket.write(data: hello)
         case .disconnected:
             isConnected = false
@@ -133,7 +134,8 @@ public class Client: WebSocketDelegate {
         // TODO: Give this a different DispatchQueue?
     }
     
-    public func connect() {
+    public func connect(token: String) {
+        self.token = token
         return socket.connect()
     }
     
