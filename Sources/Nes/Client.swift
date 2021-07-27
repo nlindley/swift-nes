@@ -5,7 +5,6 @@ import Starscream
 // TODO: Remove extra print statements
 // TODO: Handle
 
-@available(macOS 10.15, *)
 public class Client: WebSocketDelegate {
     private var request: URLRequest
     private var socket: WebSocket
@@ -127,19 +126,19 @@ public class Client: WebSocketDelegate {
         }
     }
 
-    init(url: URL) {
+    public init(url: URL) {
         request = URLRequest(url: url)
         socket = WebSocket(request: request)
         socket.delegate = self
         // TODO: Give this a different DispatchQueue?
     }
     
-    func connect() {
+    public func connect() {
         return socket.connect()
     }
     
     // TODO: Use NES errors
-    func subscribe<Message>(path: String, for type: Message.Type) -> AnyPublisher<Message, Error>
+    public func subscribe<Message>(path: String, for type: Message.Type) -> AnyPublisher<Message, Error>
     where Message : Decodable {
         // TODO: Should this be tracked by ID for unsub?
         let id = UUID()
