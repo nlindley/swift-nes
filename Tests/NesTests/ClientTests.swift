@@ -23,7 +23,7 @@ final class NesTests: XCTestCase {
         let expectation = XCTestExpectation(description: "Receives Transaction")
         
         client
-            .subscribe(path: "/transactions/99d096e5-54c3-4007-bcd5-eaf67197e78b", for: Transaction.self)
+            .subscribe(path: "/transactions/3907da17-306c-4711-9c01-12e4489a570b", for: Transaction.self)
             .first()
             .sink(receiveCompletion: { completion in
                 switch completion {
@@ -44,7 +44,7 @@ final class NesTests: XCTestCase {
         wait(for: [expectation], timeout: 2.0)
         
         XCTAssertNil(error)
-        XCTAssertEqual(id, "99d096e5-54c3-4007-bcd5-eaf67197e78b")
+        XCTAssertEqual(id, "3907da17-306c-4711-9c01-12e4489a570b")
     }
 
     static var allTests = [
