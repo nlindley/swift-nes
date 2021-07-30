@@ -26,6 +26,12 @@ public class Client: NSObject {
         self.token = authToken
         webSocketTask.resume()
     }
+    
+    public func disconnect() {
+        subscriptions = []
+        webSocketTask.cancel(with: .goingAway, reason: nil)
+        webSocketTask.resume()
+    }
 
     // TODO: Use NES errors
     public func subscribe<Message>(path: String, for type: Message.Type) -> AnyPublisher<Message, Error>
@@ -148,6 +154,10 @@ extension Client: URLSessionWebSocketDelegate {
         let hello = ClientHello(id: id, auth: auth, subs: Array(subscriptions))
         self.send(message: hello)
         readNextMessage()
+    }
+    
+    public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        isConnected = false
     }
 }
 
