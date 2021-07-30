@@ -145,7 +145,7 @@ extension Client: URLSessionWebSocketDelegate {
         print("Connected")
         let id = NesID(string: UUID().uuidString)
         let auth = self.token.map { BearerAuthToken(token: $0) }
-        let hello = ClientHello(id: id, auth: auth, subs: [])
+        let hello = ClientHello(id: id, auth: auth, subs: Array(subscriptions))
         self.send(message: hello)
         readNextMessage()
     }
