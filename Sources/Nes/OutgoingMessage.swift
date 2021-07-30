@@ -19,13 +19,11 @@ struct ClientPing: OutgoingMessage {
     let id: NesID
 }
 
-struct BearerAuthToken: Encodable {
-    let token: String
+struct AuthHeader: Encodable {
+    let headers: [String: String]
     
     func encode(to encoder: Encoder) throws {
-        //var container = encoder.
-        let authHeader: [String: String] = ["authorization": "Bearer \(token)"]
-        let value = ["headers": authHeader]
+        let value = ["headers": headers]
         try value.encode(to: encoder)
     }
 }

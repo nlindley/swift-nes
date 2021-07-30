@@ -7,30 +7,38 @@ import Combine
 public class Client: NSObject {
     public private(set) var isConnected: Bool = false
     
+    private let subject = PassthroughSubject<PubMessage, Error>()
     private var operationQueue = OperationQueue()
     private var urlSession: URLSession!
     private var webSocketTask: URLSessionWebSocketTask!
     private var subscriptions: Set<String> = []
-    private let subject = PassthroughSubject<PubMessage, Error>()
-    private var token: String?
-    
+    private var cancellables: Set<AnyCancellable> = []
+    private var fetchAuth: (() -> AnyPublisher<AuthHeader?, Never>)
+        
     typealias MessageCallback<Message> = (_ message: Message) -> ()
+    public typealias FutureAuthHeader = () -> Future<[String:String]?, Never>
 
     public init(url: URL) {
+        fetchAuth = { Empty().eraseToAnyPublisher() }
         super.init()
         urlSession = URLSession(configuration: .default, delegate: self, delegateQueue: operationQueue)
         webSocketTask = urlSession.webSocketTask(with: url)
     }
     
-    public func connect(authToken: String? = nil) {
-        self.token = authToken
+    deinit {
+        disconnect()
+    }
+    
+    public func connect(auth: FutureAuthHeader? = nil) {
+        self.fetchAuth = buildFetchAuth(auth: auth)
         webSocketTask.resume()
     }
     
     public func disconnect() {
-        subscriptions = []
         webSocketTask.cancel(with: .goingAway, reason: nil)
-        webSocketTask.resume()
+        subscriptions = []
+        cancellables.forEach { $0.cancel() }
+        cancellables.removeAll()
     }
 
     // TODO: Use NES errors
@@ -125,6 +133,28 @@ public class Client: NSObject {
         }
     }
     
+    func sendHello() {
+        let id = NesID(string: UUID().uuidString)
+        let subscriptions = self.subscriptions
+        fetchAuth()
+            .sink { auth in
+                let hello = ClientHello(id: id, auth: auth, subs: Array(subscriptions))
+                self.send(message: hello)
+                self.readNextMessage()
+            }
+            .store(in: &cancellables)
+    }
+    
+    func buildFetchAuth(auth: FutureAuthHeader?) -> (() -> AnyPublisher<AuthHeader?, Never>) {
+        return auth.map {
+            unwrappedAuth in {
+                unwrappedAuth().map { unwrappedheaders in
+                    unwrappedheaders.map { AuthHeader(headers: $0) }
+                }.eraseToAnyPublisher()
+            }
+        } ?? { Empty().eraseToAnyPublisher() }
+    }
+    
     struct PubMessage {
         let path: String
         let content: Data
@@ -149,11 +179,7 @@ extension Client: URLSessionWebSocketDelegate {
     public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         isConnected = true
         print("Connected")
-        let id = NesID(string: UUID().uuidString)
-        let auth = self.token.map { BearerAuthToken(token: $0) }
-        let hello = ClientHello(id: id, auth: auth, subs: Array(subscriptions))
-        self.send(message: hello)
-        readNextMessage()
+        sendHello()
     }
     
     public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
