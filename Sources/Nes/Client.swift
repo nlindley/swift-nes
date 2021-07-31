@@ -28,7 +28,7 @@ public class Client: NSObject {
     deinit {
         disconnect()
     }
-    
+
     public func connect(auth: FutureAuthHeader? = nil) {
         self.fetchAuth = buildFetchAuth(auth: auth)
         webSocketTask.resume()
@@ -91,7 +91,7 @@ public class Client: NSObject {
     func parseData(_ data: Data) {
         let message = try? JSONDecoder().decode(IncomingMessage.self, from: data)
         guard let message = message else {
-            subject.send(completion: .failure("Error"))
+            subject.send(completion: .failure(NesError(message: "Error")))
             return
         }
         
@@ -187,4 +187,6 @@ extension Client: URLSessionWebSocketDelegate {
     }
 }
 
-extension String: Error {}
+struct NesError: Error {
+    let message: String
+}
