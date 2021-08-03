@@ -35,8 +35,10 @@ public class Client: NSObject {
     }
     
     public func disconnect() {
+        isConnected = false
+        subject.send(completion: .finished)
+        subscriptions.forEach(unsubscribe)
         webSocketTask.cancel(with: .goingAway, reason: nil)
-        subscriptions = []
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
     }
@@ -45,11 +47,11 @@ public class Client: NSObject {
     public func subscribe<Message>(path: String, for type: Message.Type) -> AnyPublisher<Message, Error>
     where Message : Decodable {
         // TODO: Should this be tracked by ID for unsub?
-        let id = UUID()
-        let outgoingMessage = ClientSub(id: NesID(string: id.uuidString), path: path)
+        let id = NesID(string: UUID().uuidString)
+        let outgoingMessage = ClientSub(id: id, path: path)
         let data = try! JSONEncoder().encode(outgoingMessage)
 
-        subscriptions.insert(path)
+        subscriptions.insert(path.lowercased())
 
         if isConnected {
             webSocketTask.send(.data(data), completionHandler: { _ in
@@ -59,8 +61,7 @@ public class Client: NSObject {
         
         return subject
             .filter { pubMessage in
-                print("\(pubMessage.path) \(path)")
-                return pubMessage.path == path
+                return pubMessage.path.compare(path, options: .caseInsensitive) == .orderedSame
             }
             .tryMap { pubMessage in
                 let pub = try! JSONDecoder().decode(PubMessageContent<Message>.self, from: pubMessage.content)
@@ -69,7 +70,17 @@ public class Client: NSObject {
             .eraseToAnyPublisher()
     }
     
+    public func unsubscribe(_ path: String) {
+        let id = NesID(string: UUID().uuidString)
+        let outgoingMessage = ClientUnsub(id: id, path: path)
+        let data = try! JSONEncoder().encode(outgoingMessage)
+
+        subscriptions.remove(path.lowercased())
+        webSocketTask.send(.data(data)) { _ in }
+    }
+    
     func readNextMessage()  {
+        print("Reading next message.")
         webSocketTask.receive { result in
             switch(result) {
             case .failure(let error):
