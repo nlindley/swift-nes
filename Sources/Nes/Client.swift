@@ -85,6 +85,7 @@ public class Client: NSObject {
             switch(result) {
             case .failure(let error):
                 print("Failed to receive message: \(error)")
+                self.subject.send(completion: .failure(error))
             case .success(.data(let data)):
                 print(String(data: data, encoding: .utf8)!)
                 self.parseData(data)
