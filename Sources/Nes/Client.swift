@@ -103,8 +103,7 @@ public class Client: NSObject {
     }
     
     func parseData(_ data: Data) {
-        let message = try? JSONDecoder().decode(IncomingMessage.self, from: data)
-        guard let message = message else {
+        guard let message = try? JSONDecoder().decode(IncomingMessage.self, from: data) else {
             subject.send(completion: .failure(NesError(message: "Error")))
             return
         }
