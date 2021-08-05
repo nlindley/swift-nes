@@ -19,6 +19,15 @@ struct ClientPing: OutgoingMessage {
     let id: NesID
 }
 
+struct AuthHeader: Encodable {
+    let headers: [String: String]
+    
+    func encode(to encoder: Encoder) throws {
+        let value = ["headers": headers]
+        try value.encode(to: encoder)
+    }
+}
+
 // client -> server -> client
 struct ClientHello<Auth: Encodable>: OutgoingMessage {
     let type = OutgoingMessageType.hello

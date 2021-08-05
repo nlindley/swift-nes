@@ -1,0 +1,27 @@
+name: Swift
+
+on:
+  - push
+  - pull_request
+  - workflow_dispatch
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install wait-port
+        run: |
+          yarn global add wait-port
+      - name: Install Test Server Dependencies
+        working-directory: TestServer
+        run: |
+          yarn install --production --frozen-lockfile
+      - name: Build
+        run: swift build
+      - name: Run tests
+        run: |
+          node TestServer/ &
+          wait-port -t 10000 localhost:3000
+          swift test
