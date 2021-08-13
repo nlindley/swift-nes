@@ -72,6 +72,25 @@ public class Client: NSObject {
             .eraseToAnyPublisher()
     }
     
+    public func request<Payload: Encodable>(
+        method: HTTPMethod,
+        path: String,
+        payload: Payload,
+        headers: [String: String]? = nil
+    ) {
+        let message = ClientRequest(method: method, path: path, payload: payload, headers: headers)
+        send(message: message)
+    }
+    
+    public func request(
+        method: HTTPMethod,
+        path: String,
+        headers: [String: String]? = nil
+    ) {
+        let message = ClientRequest(method: method, path: path, headers: headers)
+        send(message: message)
+    }
+    
     public func unsubscribe(_ path: String) {
         let id = NesID(string: UUID().uuidString)
         let outgoingMessage = ClientUnsub(id: id, path: path)
