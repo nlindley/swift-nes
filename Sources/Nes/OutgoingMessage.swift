@@ -45,8 +45,8 @@ struct ClientReauth<Auth: Encodable>: OutgoingMessage {
 }
 
 // client -> server -> client
-struct ClientRequest<Payload: Encodable>: Encodable {
-    let type = "request"
+struct ClientRequest<Payload: Encodable>:  OutgoingMessage {
+    let type = OutgoingMessageType.request
     let id: NesID
     let method: HTTPMethod
     let path: String
