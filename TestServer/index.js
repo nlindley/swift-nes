@@ -30,6 +30,15 @@ const init = async () => {
     },
   });
 
+  server.route({
+    method: "POST",
+    path: "/echo",
+    handler: (req) => {
+      console.log("sending message", req.payload);
+      return req.payload;
+    },
+  });
+
   await server.start();
   console.log("Server running on %s", server.info.uri);
 
