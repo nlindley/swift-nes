@@ -152,6 +152,7 @@ public class Client: NSObject {
         
         switch message {
         case .hello(let hello):
+            isConnected = true
             print("Received hello: \(hello.id)")
         case .ping:
             print("Received ping")
@@ -249,7 +250,6 @@ public class Client: NSObject {
 
 extension Client: URLSessionWebSocketDelegate {
     public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-        isConnected = true
         print("Connected")
         sendHello()
     }
