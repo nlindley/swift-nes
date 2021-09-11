@@ -43,7 +43,7 @@ final class NesTests: XCTestCase {
             .store(in: &cancellables)
 
         
-        client.connect(auth: nil)
+        let _ = client.connect(auth: nil)
 
         wait(for: [expectation], timeout: 2.0)
         
@@ -60,12 +60,11 @@ final class NesTests: XCTestCase {
         var error: Error?
         let expectation = XCTestExpectation(description: "Receives response")
         
-        client.connect(auth: nil)
-        // FIXME: Need a way to ensure connection is “helloed”
-        sleep(1)
-        
         client
-            .request(method: .POST, path: "/echo", payload: TestPayload(hello: "world"), for: TestPayload.self)
+            .connect(auth: nil)
+            .flatMap {
+                $0.request(method: .POST, path: "/echo", payload: TestPayload(hello: "world"), for: TestPayload.self)
+            }
             .sink { completion in
                 switch completion {
                 case .failure(let err):

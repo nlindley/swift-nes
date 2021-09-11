@@ -4,10 +4,16 @@ import Combine
 // TODO: Remove extra print statements
 // TODO: Handle
 
+public enum ConnectionStatus {
+    case disconnected
+    case connecting
+    case connected
+}
+
 public class Client: NSObject {
-    public private(set) var isConnected: Bool = false
+    public private(set) var connectionStatus = CurrentValueSubject<ConnectionStatus, Never>(.disconnected)
     
-    private let subject = PassthroughSubject<PubMessage, Error>()
+    private let subject = PassthroughSubject<PubMessage, NesError>()
     private var operationQueue = OperationQueue()
     private var urlSession: URLSession!
     private var webSocketTask: URLSessionWebSocketTask!
@@ -30,14 +36,35 @@ public class Client: NSObject {
         disconnect()
     }
 
-    public func connect(auth: FutureAuthHeader? = nil) {
+    public func connect(auth: FutureAuthHeader? = nil) -> AnyPublisher<Client, NesError> {
         print("Connecting")
         self.fetchAuth = buildFetchAuth(auth: auth)
         webSocketTask.resume()
+        
+        connectionStatus.send(.connecting)
+        
+        return connectionStatus
+            .first(where: { status in
+                switch (status) {
+                case .connected:
+                    return true
+                case _:
+                    return false
+                }
+            })
+            .setFailureType(to: NesError.self)
+            .timeout(.seconds(30), scheduler: DispatchQueue.main, options: nil) { [self] () in
+                connectionStatus.send(.disconnected)
+                return NesError(message: "timed out connecting")
+            }
+            .map { _ in
+                return self
+            }
+            .eraseToAnyPublisher()
     }
     
     public func disconnect() {
-        isConnected = false
+        connectionStatus.send(.disconnected)
         subject.send(completion: .finished)
         subscriptions.forEach(unsubscribe)
         webSocketTask.cancel(with: .goingAway, reason: nil)
@@ -46,7 +73,7 @@ public class Client: NSObject {
     }
 
     // TODO: Use NES errors
-    public func subscribe<Message>(path: String, for type: Message.Type) -> AnyPublisher<Message, Error>
+    public func subscribe<Message>(path: String, for type: Message.Type) -> AnyPublisher<Message, NesError>
     where Message : Decodable {
         print("Will try to subscribe")
         // TODO: Should this be tracked by ID for unsub?
@@ -56,7 +83,7 @@ public class Client: NSObject {
 
         subscriptions.insert(path)
 
-        if isConnected {
+        if case .connected = connectionStatus.value {
             webSocketTask.send(.data(data), completionHandler: { _ in
             
             })
@@ -70,6 +97,7 @@ public class Client: NSObject {
                 let pub = try! JSONDecoder().decode(PubMessageContent<Message>.self, from: pubMessage.content)
                 return pub.message
             }
+            .mapError { NesError(message: $0.localizedDescription) }
             .eraseToAnyPublisher()
     }
     
@@ -129,7 +157,7 @@ public class Client: NSObject {
             switch(result) {
             case .failure(let error):
                 print("Failed to receive message: \(error)")
-                self.subject.send(completion: .failure(error))
+                self.subject.send(completion: .failure(NesError(message: error.localizedDescription)))
             case .success(.data(let data)):
                 print(String(data: data, encoding: .utf8)!)
                 self.parseData(data)
@@ -152,7 +180,7 @@ public class Client: NSObject {
         
         switch message {
         case .hello(let hello):
-            isConnected = true
+            connectionStatus.send(.connected)
             print("Received hello: \(hello.id)")
         case .ping:
             print("Received ping")
@@ -255,7 +283,7 @@ extension Client: URLSessionWebSocketDelegate {
     }
     
     public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-        isConnected = false
+        connectionStatus.send(.disconnected)
     }
 }
 
