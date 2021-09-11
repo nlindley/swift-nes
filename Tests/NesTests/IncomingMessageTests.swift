@@ -121,7 +121,7 @@ final class IncomingMessageTests: XCTestCase {
             { "type": "request", "id": 2, "payload": "ok", "statusCode": 200, "headers": { "content-type": "text/plain" } }
         """.data(using: .utf8)!
         
-        let expected: IncomingMessage = .request(ServerRequest.init(id: .numberId(2), statusCode: 200, headers: ["content-type": "text/plain"]))
+        let expected: IncomingMessage = .request(ServerRequest(id: .numberId(2), statusCode: 200, headers: ["content-type": "text/plain"]))
         let decoded = try! JSONDecoder().decode(IncomingMessage.self, from: data)
         
         XCTAssertEqual(decoded, expected)

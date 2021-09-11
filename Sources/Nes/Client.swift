@@ -4,22 +4,28 @@ import Combine
 // TODO: Remove extra print statements
 // TODO: Handle
 
+public enum ConnectionStatus {
+    case disconnected
+    case connecting
+    case connected
+}
+
 public class Client: NSObject {
-    public private(set) var isConnected: Bool = false
+    public private(set) var connectionStatus = CurrentValueSubject<ConnectionStatus, Never>(.disconnected)
     
-    private let subject = PassthroughSubject<PubMessage, Error>()
+    private let subject = PassthroughSubject<PubMessage, NesError>()
     private var operationQueue = OperationQueue()
     private var urlSession: URLSession!
     private var webSocketTask: URLSessionWebSocketTask!
     private var subscriptions: Set<String> = []
     private var cancellables: Set<AnyCancellable> = []
-    private var fetchAuth: (() -> AnyPublisher<AuthHeader?, Never>)
+    private var pendingRequests: Dictionary<NesID, (Result<Data, NesError>) -> Void> = [:]
+    private var fetchAuth: FetchAuthHeadersFuture? = nil
         
     typealias MessageCallback<Message> = (_ message: Message) -> ()
-    public typealias FutureAuthHeader = () -> Future<[String:String]?, Never>
+    public typealias FetchAuthHeadersFuture = () -> Future<[String:String], Error>
 
     public init(url: URL) {
-        fetchAuth = { Just(nil).eraseToAnyPublisher() }
         super.init()
         urlSession = URLSession(configuration: .default, delegate: self, delegateQueue: operationQueue)
         webSocketTask = urlSession.webSocketTask(with: url)
@@ -29,15 +35,38 @@ public class Client: NSObject {
         disconnect()
     }
 
-    public func connect(auth: FutureAuthHeader? = nil) {
-        print("Connecting")
-        self.fetchAuth = buildFetchAuth(auth: auth)
+    public func connect(auth: FetchAuthHeadersFuture? = nil) -> AnyPublisher<Client, NesError> {
+        if let auth = auth {
+            self.fetchAuth = auth
+        }
+
         webSocketTask.resume()
+        
+        connectionStatus.send(.connecting)
+        
+        return connectionStatus
+            .first(where: { status in
+                switch (status) {
+                case .connected:
+                    return true
+                case _:
+                    return false
+                }
+            })
+            .setFailureType(to: NesError.self)
+            .timeout(.seconds(30), scheduler: DispatchQueue.main, options: nil) { [self] () in
+                connectionStatus.send(.disconnected)
+                return NesError(message: "timed out connecting")
+            }
+            .map { _ in
+                return self
+            }
+            .eraseToAnyPublisher()
     }
     
-    public func disconnect() {
-        isConnected = false
-        subject.send(completion: .finished)
+    public func disconnect(err: Error? = nil) {
+        connectionStatus.send(.disconnected)
+        subject.send(completion: err.map { _ in Subscribers.Completion.failure(NesError(message: err?.localizedDescription ?? "")) } ?? .finished)
         subscriptions.forEach(unsubscribe)
         webSocketTask.cancel(with: .goingAway, reason: nil)
         cancellables.forEach { $0.cancel() }
@@ -45,7 +74,7 @@ public class Client: NSObject {
     }
 
     // TODO: Use NES errors
-    public func subscribe<Message>(path: String, for type: Message.Type) -> AnyPublisher<Message, Error>
+    public func subscribe<Message>(path: String, for type: Message.Type) -> AnyPublisher<Message, NesError>
     where Message : Decodable {
         print("Will try to subscribe")
         // TODO: Should this be tracked by ID for unsub?
@@ -55,7 +84,7 @@ public class Client: NSObject {
 
         subscriptions.insert(path)
 
-        if isConnected {
+        if case .connected = connectionStatus.value {
             webSocketTask.send(.data(data), completionHandler: { _ in
             
             })
@@ -69,7 +98,49 @@ public class Client: NSObject {
                 let pub = try! JSONDecoder().decode(PubMessageContent<Message>.self, from: pubMessage.content)
                 return pub.message
             }
+            .mapError { NesError(message: $0.localizedDescription) }
             .eraseToAnyPublisher()
+    }
+    
+    public func request<RequestPayload: Encodable, ResponsePayload: Decodable>(
+        method: HTTPMethod,
+        path: String,
+        payload: RequestPayload,
+        headers: [String: String]? = nil,
+        for type: ResponsePayload.Type
+    ) -> AnyPublisher<ResponsePayload?, NesError> {
+        let clientRequest = ClientRequest(method: method, path: path, payload: payload, headers: headers)
+        return request(clientRequest, for: type)
+    }
+    
+    public func request<ResponsePayload: Decodable>(
+        method: HTTPMethod,
+        path: String,
+        headers: [String: String]? = nil,
+        for type: ResponsePayload.Type
+    ) -> AnyPublisher<ResponsePayload?, NesError> {
+        let clientRequest = ClientRequest(method: method, path: path, headers: headers)
+        return request(clientRequest, for: type)
+    }
+    
+    func request<RequestPayload: Encodable, ResponsePayload: Decodable>(
+        _ clientRequest: ClientRequest<RequestPayload>,
+        for type: ResponsePayload.Type
+    ) -> AnyPublisher<ResponsePayload?, NesError> {
+        send(message: clientRequest)
+        // TODO: Make timeout configurable
+        return Future<Data, NesError> { [self] promise in
+            pendingRequests[clientRequest.id] = promise
+        }
+        .map { requestResponse in
+            let response = try! JSONDecoder().decode(RequestResponse<ResponsePayload>.self, from: requestResponse)
+            return response.payload
+        }
+        .timeout(.seconds(30), scheduler: DispatchQueue.main, options: nil) { [self] () in
+            pendingRequests.removeValue(forKey: clientRequest.id)
+            return NesError(message: "Timed out waiting for response")
+        }
+        .eraseToAnyPublisher()
     }
     
     public func unsubscribe(_ path: String) {
@@ -87,7 +158,7 @@ public class Client: NSObject {
             switch(result) {
             case .failure(let error):
                 print("Failed to receive message: \(error)")
-                self.subject.send(completion: .failure(error))
+                self.subject.send(completion: .failure(NesError(message: error.localizedDescription)))
             case .success(.data(let data)):
                 print(String(data: data, encoding: .utf8)!)
                 self.parseData(data)
@@ -110,9 +181,8 @@ public class Client: NSObject {
         
         switch message {
         case .hello(let hello):
-            print("Received hello: \(hello.id)")
+            connectionStatus.send(.connected)
         case .ping:
-            print("Received ping")
             let pong = ClientPing(id: NesID(string: UUID().uuidString))
             send(message: pong)
         case .sub(let sub):
@@ -120,11 +190,15 @@ public class Client: NSObject {
         case .reauth(let reauth):
             print("Received reauth: \(reauth.id)")
         case .pub(let pub):
-            print("Received text pub: \(pub.path)")
             let pub = PubMessage(path: pub.path, content: data)
             subject.send(pub)
         case .request(let request):
-            print("Received request: \(request.id) \(request.statusCode)")
+            guard let promise = pendingRequests[request.id] else {
+                return
+            }
+
+            promise(.success(data))
+            pendingRequests.removeValue(forKey: request.id)
         case .message(let message):
             print("Received message: \(message.id)")
         case .unsub(let unsub):
@@ -132,7 +206,7 @@ public class Client: NSObject {
         case .update:
             print("Received udpate:")
         case .revoke(let revoke):
-            print("Received revoke: \(revoke.path)")
+            // FIXME: This should only send completions for subscribers to this path
             subject.send(completion: .finished)
             subscriptions.remove(revoke.path)
         }
@@ -148,28 +222,33 @@ public class Client: NSObject {
         }
     }
     
+    private func authenticate() -> AnyPublisher<[String : String]?, Error> {
+            switch self.fetchAuth {
+            case nil:
+                return Just(nil).setFailureType(to: Error.self).eraseToAnyPublisher()
+            case .some(let auth):
+                return auth().map(Optional.some).eraseToAnyPublisher()
+            }
+        }
+    
     func sendHello() {
         print("Inside sendHello()")
         let id = NesID(string: UUID().uuidString)
         let subscriptions = self.subscriptions
-        fetchAuth()
-            .sink { auth in
-                print("Sending hello: \(subscriptions)")
+        authenticate()
+            .sink(receiveCompletion: { completion in
+                switch completion {
+                case .finished:
+                    break
+                case .failure(let err):
+                    self.disconnect(err: err)
+                }
+            }, receiveValue: { auth in
                 let hello = ClientHello(id: id, auth: auth, subs: Array(subscriptions))
                 self.send(message: hello)
                 self.readNextMessage()
-            }
+            })
             .store(in: &cancellables)
-    }
-    
-    func buildFetchAuth(auth: FutureAuthHeader?) -> (() -> AnyPublisher<AuthHeader?, Never>) {
-        return auth.map {
-            unwrappedAuth in {
-                unwrappedAuth().map { unwrappedheaders in
-                    unwrappedheaders.map { AuthHeader(headers: $0) }
-                }.eraseToAnyPublisher()
-            }
-        } ?? { Just(nil).eraseToAnyPublisher() }
     }
     
     struct PubMessage {
@@ -190,20 +269,26 @@ public class Client: NSObject {
     struct PubMessageContent<Message: Decodable>: Decodable {
         let message: Message
     }
+    
+    struct RequestResponse<ResponsePayload: Decodable>: Decodable {
+        let id: NesID
+        let statusCode: Int
+        let headers: [String:String]?
+        let payload: ResponsePayload?
+    }
 }
 
 extension Client: URLSessionWebSocketDelegate {
     public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-        isConnected = true
         print("Connected")
         sendHello()
     }
     
     public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-        isConnected = false
+        connectionStatus.send(.disconnected)
     }
 }
 
-struct NesError: Error {
+public struct NesError: Error {
     let message: String
 }
