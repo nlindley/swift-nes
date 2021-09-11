@@ -20,13 +20,12 @@ public class Client: NSObject {
     private var subscriptions: Set<String> = []
     private var cancellables: Set<AnyCancellable> = []
     private var pendingRequests: Dictionary<NesID, (Result<Data, NesError>) -> Void> = [:]
-    private var fetchAuth: (() -> AnyPublisher<AuthHeader?, Never>)
+    private var fetchAuth: FetchAuthHeadersFuture? = nil
         
     typealias MessageCallback<Message> = (_ message: Message) -> ()
-    public typealias FutureAuthHeader = () -> Future<[String:String]?, Never>
+    public typealias FetchAuthHeadersFuture = () -> Future<[String:String], Error>
 
     public init(url: URL) {
-        fetchAuth = { Just(nil).eraseToAnyPublisher() }
         super.init()
         urlSession = URLSession(configuration: .default, delegate: self, delegateQueue: operationQueue)
         webSocketTask = urlSession.webSocketTask(with: url)
@@ -36,9 +35,11 @@ public class Client: NSObject {
         disconnect()
     }
 
-    public func connect(auth: FutureAuthHeader? = nil) -> AnyPublisher<Client, NesError> {
-        print("Connecting")
-        self.fetchAuth = buildFetchAuth(auth: auth)
+    public func connect(auth: FetchAuthHeadersFuture? = nil) -> AnyPublisher<Client, NesError> {
+        if let auth = auth {
+            self.fetchAuth = auth
+        }
+
         webSocketTask.resume()
         
         connectionStatus.send(.connecting)
@@ -63,9 +64,9 @@ public class Client: NSObject {
             .eraseToAnyPublisher()
     }
     
-    public func disconnect() {
+    public func disconnect(err: Error? = nil) {
         connectionStatus.send(.disconnected)
-        subject.send(completion: .finished)
+        subject.send(completion: err.map { _ in Subscribers.Completion.failure(NesError(message: err?.localizedDescription ?? "")) } ?? .finished)
         subscriptions.forEach(unsubscribe)
         webSocketTask.cancel(with: .goingAway, reason: nil)
         cancellables.forEach { $0.cancel() }
@@ -181,9 +182,7 @@ public class Client: NSObject {
         switch message {
         case .hello(let hello):
             connectionStatus.send(.connected)
-            print("Received hello: \(hello.id)")
         case .ping:
-            print("Received ping")
             let pong = ClientPing(id: NesID(string: UUID().uuidString))
             send(message: pong)
         case .sub(let sub):
@@ -191,11 +190,9 @@ public class Client: NSObject {
         case .reauth(let reauth):
             print("Received reauth: \(reauth.id)")
         case .pub(let pub):
-            print("Received text pub: \(pub.path)")
             let pub = PubMessage(path: pub.path, content: data)
             subject.send(pub)
         case .request(let request):
-            print("Received request: \(request.id) \(request.statusCode)")
             guard let promise = pendingRequests[request.id] else {
                 return
             }
@@ -209,7 +206,7 @@ public class Client: NSObject {
         case .update:
             print("Received udpate:")
         case .revoke(let revoke):
-            print("Received revoke: \(revoke.path)")
+            // FIXME: This should only send completions for subscribers to this path
             subject.send(completion: .finished)
             subscriptions.remove(revoke.path)
         }
@@ -225,28 +222,33 @@ public class Client: NSObject {
         }
     }
     
+    private func authenticate() -> AnyPublisher<[String : String]?, Error> {
+            switch self.fetchAuth {
+            case nil:
+                return Just(nil).setFailureType(to: Error.self).eraseToAnyPublisher()
+            case .some(let auth):
+                return auth().map(Optional.some).eraseToAnyPublisher()
+            }
+        }
+    
     func sendHello() {
         print("Inside sendHello()")
         let id = NesID(string: UUID().uuidString)
         let subscriptions = self.subscriptions
-        fetchAuth()
-            .sink { auth in
-                print("Sending hello: \(subscriptions)")
+        authenticate()
+            .sink(receiveCompletion: { completion in
+                switch completion {
+                case .finished:
+                    break
+                case .failure(let err):
+                    self.disconnect(err: err)
+                }
+            }, receiveValue: { auth in
                 let hello = ClientHello(id: id, auth: auth, subs: Array(subscriptions))
                 self.send(message: hello)
                 self.readNextMessage()
-            }
+            })
             .store(in: &cancellables)
-    }
-    
-    func buildFetchAuth(auth: FutureAuthHeader?) -> (() -> AnyPublisher<AuthHeader?, Never>) {
-        return auth.map {
-            unwrappedAuth in {
-                unwrappedAuth().map { unwrappedheaders in
-                    unwrappedheaders.map { AuthHeader(headers: $0) }
-                }.eraseToAnyPublisher()
-            }
-        } ?? { Just(nil).eraseToAnyPublisher() }
     }
     
     struct PubMessage {
