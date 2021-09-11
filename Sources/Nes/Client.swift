@@ -13,6 +13,7 @@ public class Client: NSObject {
     private var webSocketTask: URLSessionWebSocketTask!
     private var subscriptions: Set<String> = []
     private var cancellables: Set<AnyCancellable> = []
+    private var pendingRequests: Dictionary<NesID, (Result<Data, NesError>) -> Void> = [:]
     private var fetchAuth: (() -> AnyPublisher<AuthHeader?, Never>)
         
     typealias MessageCallback<Message> = (_ message: Message) -> ()
@@ -72,23 +73,45 @@ public class Client: NSObject {
             .eraseToAnyPublisher()
     }
     
-    public func request<Payload: Encodable>(
+    public func request<RequestPayload: Encodable, ResponsePayload: Decodable>(
         method: HTTPMethod,
         path: String,
-        payload: Payload,
-        headers: [String: String]? = nil
-    ) {
-        let message = ClientRequest(method: method, path: path, payload: payload, headers: headers)
-        send(message: message)
+        payload: RequestPayload,
+        headers: [String: String]? = nil,
+        for type: ResponsePayload.Type
+    ) -> AnyPublisher<ResponsePayload?, NesError> {
+        let clientRequest = ClientRequest(method: method, path: path, payload: payload, headers: headers)
+        return request(clientRequest, for: type)
     }
     
-    public func request(
+    public func request<ResponsePayload: Decodable>(
         method: HTTPMethod,
         path: String,
-        headers: [String: String]? = nil
-    ) {
-        let message = ClientRequest(method: method, path: path, headers: headers)
-        send(message: message)
+        headers: [String: String]? = nil,
+        for type: ResponsePayload.Type
+    ) -> AnyPublisher<ResponsePayload?, NesError> {
+        let clientRequest = ClientRequest(method: method, path: path, headers: headers)
+        return request(clientRequest, for: type)
+    }
+    
+    func request<RequestPayload: Encodable, ResponsePayload: Decodable>(
+        _ clientRequest: ClientRequest<RequestPayload>,
+        for type: ResponsePayload.Type
+    ) -> AnyPublisher<ResponsePayload?, NesError> {
+        send(message: clientRequest)
+        // TODO: Make timeout configurable
+        return Future<Data, NesError> { [self] promise in
+            pendingRequests[clientRequest.id] = promise
+        }
+        .map { requestResponse in
+            let response = try! JSONDecoder().decode(RequestResponse<ResponsePayload>.self, from: requestResponse)
+            return response.payload
+        }
+        .timeout(.seconds(30), scheduler: DispatchQueue.main, options: nil) { [self] () in
+            pendingRequests.removeValue(forKey: clientRequest.id)
+            return NesError(message: "Timed out waiting for response")
+        }
+        .eraseToAnyPublisher()
     }
     
     public func unsubscribe(_ path: String) {
@@ -144,6 +167,12 @@ public class Client: NSObject {
             subject.send(pub)
         case .request(let request):
             print("Received request: \(request.id) \(request.statusCode)")
+            guard let promise = pendingRequests[request.id] else {
+                return
+            }
+
+            promise(.success(data))
+            pendingRequests.removeValue(forKey: request.id)
         case .message(let message):
             print("Received message: \(message.id)")
         case .unsub(let unsub):
@@ -209,6 +238,13 @@ public class Client: NSObject {
     struct PubMessageContent<Message: Decodable>: Decodable {
         let message: Message
     }
+    
+    struct RequestResponse<ResponsePayload: Decodable>: Decodable {
+        let id: NesID
+        let statusCode: Int
+        let headers: [String:String]?
+        let payload: ResponsePayload?
+    }
 }
 
 extension Client: URLSessionWebSocketDelegate {
@@ -223,6 +259,6 @@ extension Client: URLSessionWebSocketDelegate {
     }
 }
 
-struct NesError: Error {
+public struct NesError: Error {
     let message: String
 }
