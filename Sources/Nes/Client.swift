@@ -76,7 +76,6 @@ public class Client: NSObject {
     // TODO: Use NES errors
     public func subscribe<Message>(path: String, for type: Message.Type) -> AnyPublisher<Message, NesError>
     where Message : Decodable {
-        print("Will try to subscribe")
         // TODO: Should this be tracked by ID for unsub?
         let id = NesID(string: UUID().uuidString)
         let outgoingMessage = ClientSub(id: id, path: path)
@@ -153,18 +152,14 @@ public class Client: NSObject {
     }
     
     func readNextMessage()  {
-        print("Reading next message.")
         webSocketTask.receive { result in
             switch(result) {
             case .failure(let error):
-                print("Failed to receive message: \(error)")
                 self.subject.send(completion: .failure(NesError(message: error.localizedDescription)))
             case .success(.data(let data)):
-                print(String(data: data, encoding: .utf8)!)
                 self.parseData(data)
                 self.readNextMessage()
             case .success(.string(let string)):
-                print(string)
                 self.parseData(string.data(using: .utf8)!)
                 self.readNextMessage()
             @unknown default:
@@ -232,7 +227,6 @@ public class Client: NSObject {
         }
     
     func sendHello() {
-        print("Inside sendHello()")
         let id = NesID(string: UUID().uuidString)
         let subscriptions = self.subscriptions
         authenticate()
@@ -280,7 +274,6 @@ public class Client: NSObject {
 
 extension Client: URLSessionWebSocketDelegate {
     public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-        print("Connected")
         sendHello()
     }
     
