@@ -217,14 +217,14 @@ public class Client: NSObject {
         }
     }
     
-    private func authenticate() -> AnyPublisher<[String : String]?, Error> {
-            switch self.fetchAuth {
-            case nil:
-                return Just(nil).setFailureType(to: Error.self).eraseToAnyPublisher()
-            case .some(let auth):
-                return auth().map(Optional.some).eraseToAnyPublisher()
-            }
+    private func authenticate() -> AnyPublisher<AuthHeader?, Error> {
+        switch self.fetchAuth {
+        case nil:
+            return Just(nil).setFailureType(to: Error.self).eraseToAnyPublisher()
+        case .some(let auth):
+            return auth().map { AuthHeader(headers: $0) }.eraseToAnyPublisher()
         }
+    }
     
     func sendHello() {
         let id = NesID(string: UUID().uuidString)
